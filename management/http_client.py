@@ -32,6 +32,7 @@ class PortalClient:
         self.cache_path = Path(cache_path) if cache_path is not None else config.STATE_DIR/'http_session.json'
         self.scope = hashlib.sha256('\0'.join((config.SESSION_API_URL,config.COMPLETION_API_URL,config.APP_ID_STR)).encode()).hexdigest()
         self.used_cached_token = False
+        self.token = None
 
     def __enter__(self):
         return self
@@ -107,13 +108,14 @@ class PortalClient:
             try:self.cache_path.unlink()
             except OSError:pass
 
-    def post(self, endpoint, **kwargs):
-        for attempt in range(2):
+    def post(self, endpoint, *, retry_connect=True, **kwargs):
+        attempts = 2 if retry_connect else 1
+        for attempt in range(attempts):
             try:
                 response = self.session.post(endpoint,timeout=15,allow_redirects=False,**kwargs)
                 break
             except requests.ConnectTimeout:
-                if attempt:
+                if attempt==attempts-1:
                     raise NetworkError('Portal connection timed out') from None
             except requests.RequestException:
                 raise NetworkError('Portal request failed') from None
@@ -131,6 +133,14 @@ class PortalClient:
             raise ValueError('Invalid portal response structure')
         return result
 
+    def authorized_post(self, endpoint, payload=None):
+        if not self.token:
+            raise LoginError('No verified portal session')
+        kwargs = {'headers':{'Authorization':self.token}}
+        if payload is not None:
+            kwargs['json'] = payload
+        return self.post(endpoint,retry_connect=False,**kwargs)
+
     def query(self, token):
         self.progress('checking')
         result = self.post(config.COMPLETION_API_URL,headers={'Authorization':token})
@@ -145,12 +155,14 @@ class PortalClient:
             raise ValueError('Portal HTTP configuration is incomplete')
         cached = self.load_token()
         if cached:
+            self.token = cached
             try:
                 result = self.query(cached)
                 self.used_cached_token = True
                 return result
             except LoginError:
                 self.clear_token()
+                self.token = None
         self.progress('authenticating')
         identity = login(self.employee_id,self.password,session=self.session)
         if str(identity.get('userName')) != self.employee_id:
@@ -161,6 +173,7 @@ class PortalClient:
         if session.get('status') != 1 or not self.valid_token(token):
             raise LoginError('Portal did not provide a session')
         self.save_token(token)
+        self.token = token
         try:
             return self.query(token)
         except LoginError:

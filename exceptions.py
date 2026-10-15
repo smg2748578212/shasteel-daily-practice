@@ -24,3 +24,6 @@ class BrowserError(DailyPracticeError):
 
 class NetworkError(DailyPracticeError):
     """网络不可达。"""
+
+class SubmissionError(DailyPracticeError):
+    """提交失败或提交结果尚未确认，不能自动重复提交。"""

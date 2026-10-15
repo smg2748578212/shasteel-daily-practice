@@ -4,7 +4,7 @@ import os
 import sys
 
 import config
-from exceptions import AlreadyCompletedError, LoginError, NetworkError, NoQuestionsTodayError
+from exceptions import AlreadyCompletedError, LoginError, NetworkError, NoQuestionsTodayError, SubmissionError
 from logger import Logger
 from management.http_client import PortalClient, completion_value
 
@@ -45,13 +45,21 @@ def main(mode):
     if mode not in ('check','run'):
         raise ValueError('Unknown execution mode')
     if mode == 'check' or config.SESSION_API_URL:
-        def progress(stage):
-            emit(type='progress',stage=stage,current=0,total=0)
+        def progress(stage,current=0,total=0):
+            emit(type='progress',stage=stage,current=current,total=total)
         with PortalClient(progress=progress) as client:
             completed = client.completed()
-        if mode == 'check' or completed:
-            emit(type='result',completed=completed)
-            return
+            if mode == 'check' or completed:
+                emit(type='result',completed=completed)
+                return
+            if config.GENERATE_API_URL and config.SUBMIT_API_URL:
+                from management.answer_api import complete_practice
+                completed = complete_practice(client,progress)
+                if completed:
+                    emit(type='result',completed=True)
+                else:
+                    emit(type='result',completed=False,error='门户尚未确认今日完成，请检查进度后重试')
+                return
     # Only answering an unfinished exercise needs the browser dependencies.
     from auth import authenticate, save_token_cache, try_direct_access
     from browser_manager import BrowserManager
@@ -101,5 +109,7 @@ if __name__ == '__main__':
         emit(type='result',error='门户网络连接失败，请稍后重试')
     except NoQuestionsTodayError:
         emit(type='result',error='门户今日暂无题目，未记为已完成')
+    except SubmissionError as error:
+        emit(type='result',error=str(error))
     except Exception as error:
         emit(type='result',error='执行失败（'+type(error).__name__+'），请稍后重试或检查服务日志')
