@@ -11,6 +11,7 @@ from flask import Flask, jsonify, request
 from management.store import Store, now
 from management.worker import Worker
 from management.enrollment import EnrollmentError, EnrollmentLimiter, parse_submission, verify_portal_credentials
+from management.public_limits import PublicIPLimiter,client_address
 
 
 def create_app(root=None,authenticator=None,start_worker=False):
@@ -19,8 +20,10 @@ def create_app(root=None,authenticator=None,start_worker=False):
     store = Store(root or os.environ.get('DAILY_MANAGER_DATA','./runtime'))
     worker = Worker(store)
     enrollment_limiter = EnrollmentLimiter()
+    public_limiter = PublicIPLimiter(store)
     app.extensions['daily_store'] = store
     app.extensions['daily_worker'] = worker
+    app.extensions['daily_public_limiter'] = public_limiter
     if authenticator is None:
         sys.path.insert(0,os.environ.get('SITE_SHARED_ROOT','/opt/webapp'))
         from shared.models import db
@@ -46,6 +49,14 @@ def create_app(root=None,authenticator=None,start_worker=False):
             origin = request.headers.get('Origin')
             if (origin and urlsplit(origin).netloc != request.host) or request.headers.get('Sec-Fetch-Site')=='cross-site':
                 return jsonify(code=403,msg='不允许跨站操作'),403
+
+    @app.before_request
+    def limit_public_requests():
+        if request.path.startswith('/api/daily-practice/public/') and request.method!='OPTIONS':
+            retry = public_limiter.consume(client_address(request))
+            if retry:
+                return jsonify(code=429,msg='该 IP 查询超限，封禁期为 24 小时，请在解除后重试',
+                               data={'retry_after':retry}),429,{'Retry-After':str(retry)}
 
     @app.after_request
     def headers(response):
@@ -76,9 +87,7 @@ def create_app(root=None,authenticator=None,start_worker=False):
     @app.post('/api/daily-practice/public/enroll')
     def public_enroll():
         user,password = parse_submission(request.get_json(silent=True))
-        address = request.remote_addr or 'unknown'
-        if address in ('127.0.0.1','::1'):
-            address = request.headers.get('X-Real-IP',address)[:64]
+        address = client_address(request)
         if not enrollment_limiter.allow(address,user):
             return jsonify(code=429,msg='提交较频繁，请 15 分钟后重试'),429,{'Retry-After':'900'}
         if not enrollment_limiter.gate.acquire(blocking=False):

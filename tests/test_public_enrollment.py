@@ -115,10 +115,10 @@ class PublicEnrollmentTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/daily-practice/accounts',json={}).status_code,403)
 
     def test_extra_fields_and_invalid_inputs_are_rejected_before_portal_login(self):
-        for body in [{},[],{**self.body,'execution_mode':'run'},{**self.body,'run_time':'07:00'},
+        for index,body in enumerate([{},[],{**self.body,'execution_mode':'run'},{**self.body,'run_time':'07:00'},
                      {'user':'abc','password':'secret'},{'user':'00000002','password':''},
-                     {'user':'00000002','password':None}]:
-            self.assertEqual(self.submit(body).status_code,400)
+                     {'user':'00000002','password':None}]):
+            self.assertEqual(self.submit(body,environ_overrides={'REMOTE_ADDR':f'192.0.2.{index+1}'}).status_code,400)
         self.verifier.assert_not_called();self.assertEqual(self.store.accounts(),[])
 
     def test_cross_site_enrollment_is_rejected(self):
@@ -129,7 +129,7 @@ class PublicEnrollmentTests(unittest.TestCase):
         self.verifier.side_effect=EnrollmentError('Invalid credentials',401)
         for _ in range(5):self.assertEqual(self.submit().status_code,401)
         response=self.submit();self.assertEqual(response.status_code,429)
-        self.assertEqual(response.headers['Retry-After'],'900');self.assertEqual(self.verifier.call_count,5)
+        self.assertEqual(response.headers['Retry-After'],'86400');self.assertEqual(self.verifier.call_count,5)
         self.assertEqual(self.store.accounts(),[])
 
 

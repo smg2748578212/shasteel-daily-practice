@@ -76,8 +76,8 @@ class RosterTests(unittest.TestCase):
         path='/api/daily-practice/public/roster'
         self.assertEqual(self.client.get(path+'?date=2026-10-15').json['data']['source'],'live')
         self.assertEqual(self.client.get(path+'?date=2026-10-14').status_code,404)
-        for query in ['date=2026-10-16','date=2026-02-30','date=2026-1-1','date=','date=abc','account_id=1','date=2026-10-15&date=2026-10-15']:
-            self.assertEqual(self.client.get(path+'?'+query).status_code,400,query)
+        for index,query in enumerate(['date=2026-10-16','date=2026-02-30','date=2026-1-1','date=','date=abc','account_id=1','date=2026-10-15&date=2026-10-15']):
+            self.assertEqual(self.client.get(path+'?'+query,environ_overrides={'REMOTE_ADDR':f'192.0.2.{index+1}'}).status_code,400,query)
         self.assertEqual(self.store.history(),[])
 
     def test_previous_days_completion_is_unknown_and_queued_checks_are_distinct(self):

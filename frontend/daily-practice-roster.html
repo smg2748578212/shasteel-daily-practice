@@ -6,8 +6,8 @@
   <title>每日一练全部名单 · 智联工具箱</title>
   <link rel="stylesheet" href="/assets/site.css">
   <link rel="stylesheet" href="/assets/daily-practice.css?v=20261015-3">
-  <link rel="stylesheet" href="/assets/daily-practice-roster.css?v=20261015-1">
-  <script defer src="/assets/daily-practice-roster.js?v=20261015-1"></script>
+  <link rel="stylesheet" href="/assets/daily-practice-roster.css?v=20261015-2">
+  <script defer src="/assets/daily-practice-roster.js?v=20261015-2"></script>
 </head>
 <body class="site-body">
 <main class="page-wrap daily-page roster-page">
@@ -20,10 +20,11 @@
     <article><span>查询情况待确认</span><strong id="countAttention">—</strong><small id="attentionDetail">失败、未查询或正在查询</small></article>
   </section>
   <section aria-labelledby="rosterTitle">
-    <div class="daily-section-title"><div><h2 id="rosterTitle">全部名单</h2><p id="rosterUpdated">每天北京时间 16:00 查询；刷新名单不会触发门户查询。</p></div><div class="site-inline-actions"><a href="/daily-practice-roster.html" id="todayLink" class="site-button secondary" hidden>查看今日名单</a><button id="refreshRoster" class="site-button secondary" type="button">刷新名单</button></div></div>
+    <div class="daily-section-title"><div><h2 id="rosterTitle">全部名单</h2><p id="rosterUpdated">每天北京时间 16:00 查询；请手动刷新名单，不会触发门户查询。</p></div><div class="site-inline-actions"><a href="/daily-practice-roster.html" id="todayLink" class="site-button secondary" hidden>查看今日名单</a><button id="refreshRoster" class="site-button secondary" type="button">刷新名单</button></div></div>
     <div class="site-toolbar"><label class="site-search"><span aria-hidden="true">⌕</span><input id="rosterSearch" type="search" placeholder="搜索姓名或班组…" aria-label="搜索姓名或班组"></label><div class="daily-filters"><select id="rosterFilter" aria-label="筛选完成状态"><option value="all">全部状态</option><option value="completed">已完成</option><option value="pending">未完成</option><option value="failed">查询失败</option><option value="unknown">尚未查询</option><option value="checking">正在查询</option><option value="paused">已暂停</option></select><span id="rosterCount" class="site-count"></span></div></div>
     <div class="site-panel site-table-wrap"><table class="site-table roster-table"><thead><tr><th>姓名</th><th>班组</th><th>完成状态</th><th>最近查询时间</th></tr></thead><tbody id="rosterBody"><tr><td colspan="4" class="daily-empty">正在加载名单…</td></tr></tbody></table></div>
   </section>
+  <p class="daily-footnote">两个公开接口共用 IP 额度：每分钟最多 5 次、每小时最多 20 次，超限封禁 24 小时。</p>
   <p class="daily-footnote">已暂停人员单独标记，不计入通知的启用人员统计。查询失败和尚未查询不视为未完成。通知链接保存当日快照，今日名单展示当前记录。</p>
 </main>
 </body>

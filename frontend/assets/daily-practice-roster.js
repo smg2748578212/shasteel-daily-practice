@@ -1,7 +1,7 @@
 (()=>{
   const $=id=>document.getElementById(id),day=new URLSearchParams(location.search).get('date');
   const labels={completed:'已完成',pending:'未完成',failed:'查询失败',unknown:'尚未查询',checking:'正在查询',paused:'已暂停'};
-  let data=null,loading=false;
+  let data=null,loading=false,blockedUntil=0;
   function time(value){
     if(!value)return '—';const parsed=new Date(value);if(Number.isNaN(parsed.getTime()))return '—';
     return new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(parsed);
@@ -25,11 +25,15 @@
     $('rosterBody').replaceChildren(fragment);
   }
   async function refresh(){
-    if(loading)return;loading=true;$('refreshRoster').disabled=true;$('rosterError').hidden=true;
+    if(loading||Date.now()<blockedUntil)return;loading=true;$('refreshRoster').disabled=true;$('rosterError').hidden=true;
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
     try{
       const response=await fetch('/api/daily-practice/public/roster'+(day!==null?'?date='+encodeURIComponent(day):''),{credentials:'omit',cache:'no-store',signal:controller.signal});
       const body=await response.json().catch(()=>({msg:'名单服务暂时不可用，请稍后重试'}));
+      if(response.status===429){
+        const retry=Number(response.headers.get('Retry-After'));
+        blockedUntil=Date.now()+(Number.isFinite(retry)&&retry>0?retry:86400)*1000;
+      }
       if(!response.ok||body.code!==200)throw new Error(body.msg||'名单加载失败');
       data=body.data;const c=data.counts;
       $('countTotal').textContent=c.total;$('countComplete').textContent=c.completed;$('countPending').textContent=c.pending;
@@ -44,8 +48,8 @@
       $('rosterError').textContent=error.name==='AbortError'?'名单加载超时，请稍后刷新':error instanceof TypeError?'暂时无法连接名单服务，请稍后刷新':error.message;
       $('rosterError').hidden=false;$('todayLink').hidden=day===null;
       if(!data)empty('暂时无法加载名单，请刷新重试。');
-    }finally{clearTimeout(timer);loading=false;$('refreshRoster').disabled=false;}
+    }finally{clearTimeout(timer);loading=false;$('refreshRoster').disabled=Date.now()<blockedUntil;}
   }
   $('rosterSearch').addEventListener('input',render);$('rosterFilter').addEventListener('change',render);$('refreshRoster').addEventListener('click',refresh);
-  refresh();setInterval(()=>{if(!document.hidden&&data?.source==='live')refresh();},30000);
+  refresh();
 })();
