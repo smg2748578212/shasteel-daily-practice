@@ -21,7 +21,7 @@
       const days=a.run_days.length===7?'每天':a.run_days.map(d=>weekdays[d]).join('、');
       const progress=isActive?`${stages[j.stage]||'准备执行'}${j.total>0?` · ${Math.min(j.current,j.total)} / ${j.total} 题`:''}`:(attention(a)?j.message:'');
       const ratio=j?.total>0?Math.min(95,Math.round(j.current/j.total*95)):0;
-      return `<tr><td><strong>${e(a.employee_name)}</strong><small>工号 ${e(a.employee_id)}${a.team?' · '+e(a.team):''}</small></td><td><strong>${e(a.run_time)}</strong> ${a.enabled?'':'<span class="site-badge">已暂停</span>'}<small>${a.execution_mode==='check'?'仅查看进度':'完成每日一练'} · ${e(days)}</small></td><td>${badge(status)}${progress?`<div class="daily-progress">${e(progress)}</div>`:''}${isActive&&j.total>0?`<div class="daily-progress-track"><span style="width:${ratio}%"></span></div>`:''}</td><td>${date(a.checked_at)}<small>下次：${a.enabled?date(a.next_run):'已暂停'}</small></td><td><div class="site-inline-actions"><button class="site-button secondary small" data-action="check" data-id="${a.id}" ${isActive||!a.enabled?'disabled':''}>检查状态</button><button class="site-button secondary small" data-action="run" data-id="${a.id}" ${isActive||!a.enabled||a.execution_mode==='check'?'disabled':''}>完成每日一练</button><button class="site-button secondary small" data-action="edit" data-id="${a.id}">编辑</button><button class="site-button secondary small" data-action="toggle" data-id="${a.id}">${a.enabled?'暂停':'启用'}</button><button class="site-button danger small" data-action="delete" data-id="${a.id}" ${isActive?'disabled':''}>移除</button></div></td></tr>`;
+      return `<tr><td><strong>${e(a.employee_name)}</strong><small>工号 ${e(a.employee_id)}${a.team?' · '+e(a.team):''}</small></td><td><strong>${e(a.run_time)}</strong> ${a.enabled?'':'<span class="site-badge">已暂停</span>'}<small>${a.execution_mode==='check'?'仅查看进度':'完成每日一练'} · ${e(days)}${a.enrollment_source==='public'?' · 自助接入':''}</small></td><td>${badge(status)}${progress?`<div class="daily-progress">${e(progress)}</div>`:''}${isActive&&j.total>0?`<div class="daily-progress-track"><span style="width:${ratio}%"></span></div>`:''}</td><td>${date(a.checked_at)}<small>下次：${a.enabled?date(a.next_run):'已暂停'}</small></td><td><div class="site-inline-actions"><button class="site-button secondary small" data-action="check" data-id="${a.id}" ${isActive||!a.enabled?'disabled':''}>检查状态</button><button class="site-button secondary small" data-action="run" data-id="${a.id}" ${isActive||!a.enabled||a.execution_mode==='check'?'disabled':''}>完成每日一练</button><button class="site-button secondary small" data-action="edit" data-id="${a.id}">编辑</button><button class="site-button secondary small" data-action="toggle" data-id="${a.id}">${a.enabled?'暂停':'启用'}</button><button class="site-button danger small" data-action="delete" data-id="${a.id}" ${isActive?'disabled':''}>移除</button></div></td></tr>`;
     }).join(''):`<tr><td colspan="5" class="daily-empty">${accounts.length?'未找到符合条件的人员。':'还没有人员，添加后即可设置自动执行计划。'}</td></tr>`;
     const selected=$('historyPerson').value;
     $('historyPerson').innerHTML='<option value="">全部人员</option>'+accounts.map(a=>`<option value="${a.id}">${e(a.employee_name)} · ${e(a.employee_id)}</option>`).join('');
@@ -46,11 +46,13 @@
     editing=account?.id??null;const form=$('personForm');form.reset();$('formError').hidden=true;
     $('dialogTitle').textContent=account?'编辑人员':'添加人员';form.elements.employee_id.readOnly=!!account;
     for(const key of ['employee_name','employee_id','team','run_time'])form.elements[key].value=account?.[key]??(key==='run_time'?'07:00':'');
+    const selfService=account?.enrollment_source==='public';$('publicEnrollmentHint').hidden=!selfService;
+    form.elements.execution_mode.disabled=selfService;form.elements.run_time.readOnly=selfService;
     form.elements.execution_mode.value=account?.execution_mode??'check';
     form.elements.enabled.value=account?.enabled===false?'0':'1';form.elements.password.required=!account;
     form.elements.password.value='';form.elements.password.placeholder=account?'留空保留现有密码':'门户登录密码';
     $('passwordHint').textContent=account?'留空不修改。已保存的密码不会回显。':'仅用于该人员的门户登录，保存后不回显。';
-    form.querySelectorAll('[name=run_days]').forEach(input=>input.checked=(account?.run_days??[0,1,2,3,4,5,6]).includes(Number(input.value)));
+    form.querySelectorAll('[name=run_days]').forEach(input=>{input.disabled=selfService;input.checked=(account?.run_days??[0,1,2,3,4,5,6]).includes(Number(input.value));});
     $('personDialog').showModal();
   }
   $('addButton').onclick=()=>open();$('refreshButton').onclick=()=>refresh(true);

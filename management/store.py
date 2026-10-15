@@ -9,6 +9,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from cryptography.fernet import Fernet
+from management.reports import format_daily_report
 
 TZ = ZoneInfo('Asia/Shanghai')
 ACTIVE = ('queued', 'running')
@@ -58,6 +59,7 @@ class Store:
               employee_name TEXT NOT NULL, team TEXT NOT NULL DEFAULT '',
               secret TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
               execution_mode TEXT NOT NULL DEFAULT 'run',
+              enrollment_source TEXT NOT NULL DEFAULT 'admin', public_enrolled_at TEXT,
               run_time TEXT NOT NULL, run_days TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0,
               created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
               checked_day TEXT, completion INTEGER, checked_at TEXT);
@@ -73,11 +75,22 @@ class Store:
             CREATE UNIQUE INDEX IF NOT EXISTS one_scheduled_run ON jobs(account_id,day)
               WHERE trigger='schedule';
             CREATE INDEX IF NOT EXISTS recent_jobs ON jobs(created_at);
+            CREATE TABLE IF NOT EXISTS manager_settings (key TEXT PRIMARY KEY,value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS daily_reports (
+              day TEXT PRIMARY KEY,status TEXT NOT NULL,title TEXT NOT NULL,content TEXT NOT NULL,
+              created_at TEXT NOT NULL,finished_at TEXT);
             ''')
             # Existing installations retain their previously configured answering behavior.
             columns = {row['name'] for row in db.execute('PRAGMA table_info(accounts)')}
             if 'execution_mode' not in columns:
                 db.execute("ALTER TABLE accounts ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'run'")
+            if 'enrollment_source' not in columns:
+                db.execute("ALTER TABLE accounts ADD COLUMN enrollment_source TEXT NOT NULL DEFAULT 'admin'")
+            if 'public_enrolled_at' not in columns:
+                db.execute('ALTER TABLE accounts ADD COLUMN public_enrolled_at TEXT')
+            at = now()
+            first_report = (at + timedelta(days=1) if at.hour >= 16 else at).date().isoformat()
+            db.execute("INSERT OR IGNORE INTO manager_settings(key,value) VALUES('daily_summary_start_day',?)",(first_report,))
         self.path.chmod(0o600)
 
     @contextmanager
@@ -115,7 +128,7 @@ class Store:
                 result.append(item)
             return result
 
-    def save(self, data, account_id=None):
+    def save(self, data, account_id=None, *, public_enrollment=False):
         if not isinstance(data, dict):
             raise ValueError('人员信息必须为 JSON 对象')
         allowed = {'employee_id','employee_name','team','password','enabled','run_time','run_days','execution_mode'}
@@ -124,10 +137,22 @@ class Store:
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             old = db.execute('SELECT * FROM accounts WHERE id=? AND deleted=0',(account_id,)).fetchone() if account_id else None
+            if public_enrollment:
+                old = db.execute('SELECT * FROM accounts WHERE employee_id=?',(data.get('employee_id'),)).fetchone()
+                if old and old['deleted']:
+                    raise ValueError('该账号暂时无法接入，请联系管理员')
+                account_id = old['id'] if old else None
             if account_id and not old:
                 raise LookupError('人员不存在')
             values = dict(old) if old else {}
             values.update(data)
+            source = 'public' if public_enrollment else values.get('enrollment_source','admin')
+            enrolled_at = values.get('public_enrolled_at')
+            if public_enrollment:
+                name = old['employee_name'] if old and old['employee_name'] != old['employee_id'] else data.get('employee_name',data.get('employee_id'))
+                values.update(employee_name=name,
+                              execution_mode='check',run_time='16:00',enabled=True)
+                enrolled_at = enrolled_at or timestamp()
             employee = values.get('employee_id','')
             name = values.get('employee_name','')
             team = values.get('team','')
@@ -152,9 +177,11 @@ class Store:
             run_time = values.get('run_time','07:00')
             if not isinstance(run_time,str) or not re.fullmatch(r'(?:[01][0-9]|2[0-3]):[0-5][0-9]',run_time):
                 raise ValueError('执行时间格式为 HH:MM')
-            days = data.get('run_days',json.loads(old['run_days']) if old else list(range(7)))
+            days = list(range(7)) if public_enrollment else data.get('run_days',json.loads(old['run_days']) if old else list(range(7)))
             if not isinstance(days,list) or not days or any(type(d) is not int or d not in range(7) for d in days):
                 raise ValueError('请选择有效的执行星期')
+            if source == 'public' and (execution_mode != 'check' or run_time != '16:00' or set(days) != set(range(7))):
+                raise ValueError('自助接入人员固定为仅查看进度，每天 16:00 查询')
             password = data.get('password','')
             if not isinstance(password,str) or len(password)>256 or '\0' in password:
                 raise ValueError('密码格式不正确')
@@ -163,15 +190,15 @@ class Store:
             secret = self.cipher.encrypt(password.encode()).decode() if password else old['secret']
             current = timestamp()
             if old:
-                db.execute('UPDATE accounts SET employee_name=?,team=?,secret=?,enabled=?,execution_mode=?,run_time=?,run_days=?,updated_at=? WHERE id=?',
-                           (name.strip(),team.strip(),secret,int(enabled),execution_mode,run_time,json.dumps(sorted(set(days))),current,account_id))
+                db.execute('UPDATE accounts SET employee_name=?,team=?,secret=?,enabled=?,execution_mode=?,run_time=?,run_days=?,enrollment_source=?,public_enrolled_at=?,updated_at=? WHERE id=?',
+                           (name.strip(),team.strip(),secret,int(enabled),execution_mode,run_time,json.dumps(sorted(set(days))),source,enrolled_at,current,account_id))
                 if execution_mode == 'check':
                     db.execute("UPDATE jobs SET mode='check' WHERE account_id=? AND status='queued' AND mode='run'",(account_id,))
                 if not enabled:
                     db.execute("UPDATE jobs SET status='interrupted',stage='finished',message='计划已暂停，排队任务已取消',finished_at=? WHERE account_id=? AND status='queued'",(current,account_id))
             else:
-                cursor = db.execute('INSERT INTO accounts(employee_id,employee_name,team,secret,enabled,execution_mode,run_time,run_days,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
-                                    (employee,name.strip(),team.strip(),secret,int(enabled),execution_mode,run_time,json.dumps(sorted(set(days))),current,current))
+                cursor = db.execute('INSERT INTO accounts(employee_id,employee_name,team,secret,enabled,execution_mode,run_time,run_days,enrollment_source,public_enrolled_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+                                    (employee,name.strip(),team.strip(),secret,int(enabled),execution_mode,run_time,json.dumps(sorted(set(days))),source,enrolled_at,current,current))
                 account_id = cursor.lastrowid
             return self.public(db.execute('SELECT * FROM accounts WHERE id=?',(account_id,)).fetchone())
 
@@ -195,7 +222,7 @@ class Store:
             if not account['enabled']:
                 raise ValueError('人员已暂停，请先启用')
             mode = mode or account['execution_mode']
-            if mode == 'run' and account['execution_mode'] == 'check':
+            if mode == 'run' and (account['execution_mode'] == 'check' or account['enrollment_source'] == 'public'):
                 raise ValueError('该人员配置为仅查看进度，不能执行答题')
             job_id = str(uuid.uuid4())
             try:
@@ -205,16 +232,55 @@ class Store:
                 return None
             return job_id
 
+    @staticmethod
+    def due(account, at):
+        if not account['enabled'] or at.weekday() not in account['run_days']:
+            return False
+        if account['run_time'] > at.strftime('%H:%M'):
+            return False
+        if account['enrollment_source']=='public' and account['public_enrolled_at']:
+            due = at.replace(hour=16,minute=0,second=0,microsecond=0)
+            if datetime.fromisoformat(account['public_enrolled_at']) > due:
+                return False
+        return not (account['execution_mode']=='run' and account['checked_day']==at.date().isoformat() and account['completion'])
+
     def schedule(self, at=None):
         at = at or now()
         for account in self.accounts():
-            if not account['enabled'] or at.weekday() not in account['run_days']:
-                continue
-            if account['run_time'] > at.strftime('%H:%M'):
-                continue
-            if account['execution_mode']=='run' and account['checked_day']==at.date().isoformat() and account['completion']:
-                continue
-            self.enqueue(account['id'],trigger='schedule',at=at)
+            if self.due(account,at):
+                self.enqueue(account['id'],trigger='schedule',at=at)
+
+    def claim_daily_report(self, at=None):
+        at = at or now()
+        day = at.date().isoformat()
+        if at.hour < 16:
+            return None
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            first_day = db.execute("SELECT value FROM manager_settings WHERE key='daily_summary_start_day'").fetchone()[0]
+            if day < first_day or db.execute('SELECT 1 FROM daily_reports WHERE day=?',(day,)).fetchone():
+                return None
+            if db.execute("SELECT 1 FROM jobs WHERE status IN ('queued','running')").fetchone():
+                return None
+            rows = db.execute('SELECT * FROM accounts WHERE deleted=0 AND enabled=1 ORDER BY team,employee_name,id').fetchall()
+            if not rows:
+                return None
+            for row in rows:
+                if self.due(self.public(row),at) and not db.execute("SELECT 1 FROM jobs WHERE account_id=? AND day=? AND trigger='schedule'",(row['id'],day)).fetchone():
+                    return None
+            people = []
+            for row in rows:
+                person = {key:row[key] for key in ['employee_name','employee_id','checked_day','completion','checked_at']}
+                latest = db.execute('SELECT status,finished_at FROM jobs WHERE account_id=? AND day=? ORDER BY created_at DESC,rowid DESC LIMIT 1',(row['id'],day)).fetchone()
+                person.update(last_status=latest['status'] if latest else None,last_finished_at=latest['finished_at'] if latest else None)
+                people.append(person)
+            report = format_daily_report(people,day)
+            db.execute("INSERT INTO daily_reports(day,status,title,content,created_at) VALUES(?,'sending',?,?,?)",(day,report['title'],report['content'],timestamp()))
+            return dict(day=day,**report)
+
+    def finish_daily_report(self, day, sent):
+        with self.connect() as db:
+            db.execute("UPDATE daily_reports SET status=?,finished_at=? WHERE day=? AND status='sending'",('sent' if sent else 'failed',timestamp(),day))
 
     def claim(self):
         with self.connect() as db:
@@ -222,8 +288,8 @@ class Store:
             row = db.execute("SELECT j.* FROM jobs j JOIN accounts a ON a.id=j.account_id WHERE j.status='queued' AND a.enabled=1 AND a.deleted=0 ORDER BY j.created_at,j.rowid LIMIT 1").fetchone()
             if row:
                 # Recheck the saved mode inside the same transaction used to claim the job.
-                account = db.execute('SELECT execution_mode FROM accounts WHERE id=?',(row['account_id'],)).fetchone()
-                if row['mode'] == 'run' and account['execution_mode'] == 'check':
+                account = db.execute('SELECT execution_mode,enrollment_source FROM accounts WHERE id=?',(row['account_id'],)).fetchone()
+                if row['mode'] == 'run' and (account['execution_mode'] == 'check' or account['enrollment_source'] == 'public'):
                     db.execute("UPDATE jobs SET mode='check' WHERE id=?",(row['id'],))
                     row = db.execute('SELECT * FROM jobs WHERE id=?',(row['id'],)).fetchone()
                 db.execute("UPDATE jobs SET status='running',stage='starting',started_at=? WHERE id=?",(timestamp(),row['id']))

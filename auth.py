@@ -13,10 +13,12 @@ def compute_auth_token(user_unique_token: str) -> str:
     pass
     return hashlib.sha256((user_unique_token + 'shasteel').encode()).hexdigest()
 
-def login() -> dict:
+def login(employee_id=None, password=None) -> dict:
     pass
-    encoded_pw = encode_password(config.PASSWORD)
-    payload = {'userName': config.EMPLOYEE_ID, 'password': encoded_pw}
+    employee_id = config.EMPLOYEE_ID if employee_id is None else employee_id
+    password = config.PASSWORD if password is None else password
+    encoded_pw = encode_password(password)
+    payload = {'userName': employee_id, 'password': encoded_pw}
     try:
         resp = requests.post(config.LOGIN_URL, json=payload, timeout=15)
     except requests.RequestException as e:

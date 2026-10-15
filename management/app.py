@@ -10,6 +10,7 @@ from flask import Flask, jsonify, request
 
 from management.store import Store, now
 from management.worker import Worker
+from management.enrollment import EnrollmentError, EnrollmentLimiter, parse_submission, verify_portal_credentials
 
 
 def create_app(root=None,authenticator=None,start_worker=False):
@@ -17,6 +18,7 @@ def create_app(root=None,authenticator=None,start_worker=False):
     app.config['MAX_CONTENT_LENGTH'] = 16384
     store = Store(root or os.environ.get('DAILY_MANAGER_DATA','./runtime'))
     worker = Worker(store)
+    enrollment_limiter = EnrollmentLimiter()
     app.extensions['daily_store'] = store
     app.extensions['daily_worker'] = worker
     if authenticator is None:
@@ -66,6 +68,30 @@ def create_app(root=None,authenticator=None,start_worker=False):
     @app.errorhandler(413)
     def too_large(error):
         return jsonify(code=413,msg='请求内容过大'),413
+
+    @app.errorhandler(EnrollmentError)
+    def enrollment_error(error):
+        return jsonify(code=error.status,msg=str(error)),error.status
+
+    @app.post('/api/daily-practice/public/enroll')
+    def public_enroll():
+        user,password = parse_submission(request.get_json(silent=True))
+        address = request.remote_addr or 'unknown'
+        if address in ('127.0.0.1','::1'):
+            address = request.headers.get('X-Real-IP',address)[:64]
+        if not enrollment_limiter.allow(address,user):
+            return jsonify(code=429,msg='提交较频繁，请 15 分钟后重试'),429,{'Retry-After':'900'}
+        if not enrollment_limiter.gate.acquire(blocking=False):
+            return jsonify(code=429,msg='门户验证繁忙，请稍后重试'),429,{'Retry-After':'10'}
+        try:
+            profile = verify_portal_credentials(user,password)
+            name = profile.get('employee_name',user) if isinstance(profile,dict) else user
+            account = store.save({'employee_id':user,'employee_name':name,'password':password},public_enrollment=True)
+        finally:
+            enrollment_limiter.gate.release()
+        return jsonify(code=200,msg='接入成功，将于每天北京时间 16:00 仅查询进度',data={
+            'execution_mode':'check','run_time':'16:00','timezone':'Asia/Shanghai','next_run':account['next_run'],
+        })
 
     @app.get('/health')
     def health():

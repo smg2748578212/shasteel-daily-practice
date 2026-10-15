@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+from notify import send
 
 
 class Worker:
@@ -40,9 +41,23 @@ class Worker:
                 if job:
                     self.execute(job)
                     continue
+                if os.environ.get('DAILY_MANAGER_PAUSED') != '1':
+                    self.notify_daily_summary()
             except Exception as error:
                 print('Scheduler operation failed:',type(error).__name__,flush=True)
             self.stop_event.wait(2)
+
+    def notify_daily_summary(self):
+        if not all(os.environ.get(key) for key in ('ASTROBOT_API_URL','ASTROBOT_API_KEY','ASTROBOT_TARGETS')):
+            return
+        report = self.store.claim_daily_report()
+        if report:
+            sent = False
+            try:
+                sent = send(report['title'],report['content'])
+            finally:
+                self.store.finish_daily_report(report['day'],sent)
+            print('Daily practice summary delivery:', 'sent' if sent else 'failed',flush=True)
 
     def execute(self,job):
         result = None
@@ -53,6 +68,8 @@ class Worker:
             env = dict(os.environ,SHASTEEL_EMPLOYEE_ID=employee,SHASTEEL_EMPLOYEE_NAME=name,
                        SHASTEEL_PASSWORD=password,DAILY_PRACTICE_STATE_DIR=str(state),PYTHONUNBUFFERED='1')
             env.pop('DATABASE_URL',None)
+            for key in ('ASTROBOT_API_KEY','ASTROBOT_TARGETS'):
+                env.pop(key,None)
             self.process = subprocess.Popen([sys.executable,'-u','-m','management.execute',job['mode']],
                                             cwd=Path(__file__).resolve().parents[1],env=env,
                                             stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,start_new_session=True)

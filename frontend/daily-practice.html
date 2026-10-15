@@ -4,9 +4,9 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>每日一练 · 智联工具箱</title>
   <link rel="stylesheet" href="/assets/site.css">
-  <link rel="stylesheet" href="/assets/daily-practice.css?v=20261015-2">
+  <link rel="stylesheet" href="/assets/daily-practice.css?v=20261015-3">
   <script defer src="/assets/site.js"></script>
-  <script defer src="/assets/daily-practice.js?v=20261015-2"></script>
+  <script defer src="/assets/daily-practice.js?v=20261015-3"></script>
 </head>
 <body class="site-body" data-page="daily-practice">
 <main class="page-wrap daily-page">
@@ -32,7 +32,7 @@
 <dialog id="personDialog" class="site-dialog">
   <form id="personForm">
     <div class="site-dialog-head"><h2 id="dialogTitle">添加人员</h2><button type="button" id="closeDialog" class="daily-close" aria-label="关闭">×</button></div>
-    <div class="daily-form-body"><div id="formError" class="site-error" hidden role="alert"></div>
+    <div class="daily-form-body"><p id="publicEnrollmentHint" hidden>自助接入人员：固定仅查看进度，每天 16:00 查询。可维护姓名、班组、密码及启停状态。</p><div id="formError" class="site-error" hidden role="alert"></div>
       <div class="daily-form-grid"><label>姓名<input name="employee_name" required maxlength="80" autocomplete="off" placeholder="人员姓名"></label><label>工号<input name="employee_id" required pattern="[0-9]{1,20}" maxlength="20" inputmode="numeric" autocomplete="off" placeholder="门户登录工号"></label></div>
       <label>班组<input name="team" maxlength="80" autocomplete="off" placeholder="例如：原料车间一班"></label>
       <label>门户密码<input name="password" type="password" maxlength="256" autocomplete="new-password"><small id="passwordHint">仅用于该人员的门户登录，保存后不回显。</small></label>

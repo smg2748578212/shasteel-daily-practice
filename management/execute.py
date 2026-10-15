@@ -10,7 +10,6 @@ from browser_manager import BrowserManager
 from daily_practice import DailyPracticeRunner
 from exceptions import AlreadyCompletedError, LoginError, NetworkError, NoQuestionsTodayError
 from logger import Logger
-from notify import send
 from question_bank import append_question, get_bank
 
 
@@ -79,7 +78,6 @@ def main(mode):
         if completed:
             for item in runner.new_bank_items:
                 append_question(item['question'],item['options'],item['answer'],item.get('qtype',''))
-            send('每日一练完成',f'{config.EMPLOYEE_NAME or config.EMPLOYEE_ID}：门户已确认今日完成')
             emit(type='result',completed=True)
         else:
             emit(type='result',completed=False,error='门户尚未确认完成，请查看执行记录后重试')

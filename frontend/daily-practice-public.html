@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>每日一练进度接入 · 智联工具箱</title>
+  <link rel="stylesheet" href="/assets/site.css">
+  <link rel="stylesheet" href="/assets/daily-practice-public.css?v=20261015-1">
+  <script defer src="/assets/daily-practice-public.js?v=20261015-1"></script>
+</head>
+<body class="site-body">
+<main class="daily-public-wrap">
+  <section class="daily-public-card" aria-labelledby="pageTitle">
+    <div class="daily-public-mark" aria-hidden="true">练</div>
+    <div class="site-eyebrow">DAILY PRACTICE / PROGRESS</div>
+    <h1 id="pageTitle">每日一练进度接入</h1>
+    <p class="daily-public-intro">无需网站登录，使用本人门户账号接入。<br>每天北京时间 16:00 查询一次，仅查看进度。</p>
+    <form id="enrollForm" action="/api/daily-practice/public/enroll" method="post">
+      <label for="user">用户</label>
+      <input id="user" name="user" required pattern="[0-9]{1,20}" maxlength="20" inputmode="numeric" autocomplete="username" placeholder="门户登录工号">
+      <label for="password">密码</label>
+      <input id="password" name="password" type="password" required maxlength="256" autocomplete="current-password" placeholder="门户登录密码">
+      <button id="submitButton" class="site-button" type="submit">接入每日查询</button>
+      <p id="result" class="daily-public-result" role="status" aria-live="polite" hidden></p>
+    </form>
+    <p class="daily-public-note">验证通过后保存至每日一练后台，不提交答案。重复提交可更新密码；16:00 后首次接入，从次日开始查询。</p>
+  </section>
+</main>
+</body>
+</html>

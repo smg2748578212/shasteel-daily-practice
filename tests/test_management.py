@@ -128,8 +128,11 @@ class StoreTests(unittest.TestCase):
         self.store.enqueue(self.person['id'],'check')
         with self.store.connect() as db:
             db.execute('ALTER TABLE accounts DROP COLUMN execution_mode')
+            db.execute('ALTER TABLE accounts DROP COLUMN enrollment_source')
+            db.execute('ALTER TABLE accounts DROP COLUMN public_enrolled_at')
         migrated = Store(self.temp.name)
         self.assertEqual(migrated.accounts()[0]['execution_mode'],'run')
+        self.assertEqual(migrated.accounts()[0]['enrollment_source'],'admin')
         self.assertEqual(migrated.credentials(self.person['id'])[2],'synthetic-secret')
         self.assertEqual(len(migrated.history()),1)
         self.assertEqual(Store(self.temp.name).accounts()[0]['execution_mode'],'run')
