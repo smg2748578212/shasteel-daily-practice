@@ -12,7 +12,7 @@
   const attention=a=>a.latest_job&&['failed','interrupted'].includes(a.latest_job.status);
   function render(){
     const q=$('search').value.trim().toLowerCase(),filter=$('statusFilter').value;
-    $('statPeople').textContent=accounts.length;$('statEnabled').textContent=`${accounts.filter(a=>a.enabled).length} 人已启用自动执行`;
+    $('statPeople').textContent=accounts.length;$('statEnabled').textContent=`${accounts.filter(a=>a.enabled).length} 人已启用定时任务`;
     $('statComplete').textContent=accounts.filter(a=>a.today_status==='completed').length;$('statActive').textContent=accounts.filter(active).length;$('statAttention').textContent=accounts.filter(attention).length;
     const visible=accounts.filter(a=>(a.employee_name+a.employee_id+a.team).toLowerCase().includes(q)).filter(a=>filter==='all'||filter==='completed'&&a.today_status==='completed'||filter==='pending'&&a.today_status==='pending'||filter==='active'&&active(a)||filter==='attention'&&attention(a)||filter==='paused'&&!a.enabled);
     $('peopleCount').textContent=`${visible.length} 位人员`;
@@ -21,7 +21,7 @@
       const days=a.run_days.length===7?'每天':a.run_days.map(d=>weekdays[d]).join('、');
       const progress=isActive?`${stages[j.stage]||'准备执行'}${j.total>0?` · ${Math.min(j.current,j.total)} / ${j.total} 题`:''}`:(attention(a)?j.message:'');
       const ratio=j?.total>0?Math.min(95,Math.round(j.current/j.total*95)):0;
-      return `<tr><td><strong>${e(a.employee_name)}</strong><small>工号 ${e(a.employee_id)}${a.team?' · '+e(a.team):''}</small></td><td><strong>${e(a.run_time)}</strong> ${a.enabled?'':'<span class="site-badge">已暂停</span>'}<small>${e(days)}</small></td><td>${badge(status)}${progress?`<div class="daily-progress">${e(progress)}</div>`:''}${isActive&&j.total>0?`<div class="daily-progress-track"><span style="width:${ratio}%"></span></div>`:''}</td><td>${date(a.checked_at)}<small>下次：${a.enabled?date(a.next_run):'已暂停'}</small></td><td><div class="site-inline-actions"><button class="site-button secondary small" data-action="check" data-id="${a.id}" ${isActive||!a.enabled?'disabled':''}>检查状态</button><button class="site-button secondary small" data-action="run" data-id="${a.id}" ${isActive||!a.enabled?'disabled':''}>立即执行</button><button class="site-button secondary small" data-action="edit" data-id="${a.id}">编辑</button><button class="site-button secondary small" data-action="toggle" data-id="${a.id}">${a.enabled?'暂停':'启用'}</button><button class="site-button danger small" data-action="delete" data-id="${a.id}" ${isActive?'disabled':''}>移除</button></div></td></tr>`;
+      return `<tr><td><strong>${e(a.employee_name)}</strong><small>工号 ${e(a.employee_id)}${a.team?' · '+e(a.team):''}</small></td><td><strong>${e(a.run_time)}</strong> ${a.enabled?'':'<span class="site-badge">已暂停</span>'}<small>${a.execution_mode==='check'?'仅查看进度':'完成每日一练'} · ${e(days)}</small></td><td>${badge(status)}${progress?`<div class="daily-progress">${e(progress)}</div>`:''}${isActive&&j.total>0?`<div class="daily-progress-track"><span style="width:${ratio}%"></span></div>`:''}</td><td>${date(a.checked_at)}<small>下次：${a.enabled?date(a.next_run):'已暂停'}</small></td><td><div class="site-inline-actions"><button class="site-button secondary small" data-action="check" data-id="${a.id}" ${isActive||!a.enabled?'disabled':''}>检查状态</button><button class="site-button secondary small" data-action="run" data-id="${a.id}" ${isActive||!a.enabled||a.execution_mode==='check'?'disabled':''}>完成每日一练</button><button class="site-button secondary small" data-action="edit" data-id="${a.id}">编辑</button><button class="site-button secondary small" data-action="toggle" data-id="${a.id}">${a.enabled?'暂停':'启用'}</button><button class="site-button danger small" data-action="delete" data-id="${a.id}" ${isActive?'disabled':''}>移除</button></div></td></tr>`;
     }).join(''):`<tr><td colspan="5" class="daily-empty">${accounts.length?'未找到符合条件的人员。':'还没有人员，添加后即可设置自动执行计划。'}</td></tr>`;
     const selected=$('historyPerson').value;
     $('historyPerson').innerHTML='<option value="">全部人员</option>'+accounts.map(a=>`<option value="${a.id}">${e(a.employee_name)} · ${e(a.employee_id)}</option>`).join('');
@@ -46,6 +46,7 @@
     editing=account?.id??null;const form=$('personForm');form.reset();$('formError').hidden=true;
     $('dialogTitle').textContent=account?'编辑人员':'添加人员';form.elements.employee_id.readOnly=!!account;
     for(const key of ['employee_name','employee_id','team','run_time'])form.elements[key].value=account?.[key]??(key==='run_time'?'07:00':'');
+    form.elements.execution_mode.value=account?.execution_mode??'check';
     form.elements.enabled.value=account?.enabled===false?'0':'1';form.elements.password.required=!account;
     form.elements.password.value='';form.elements.password.placeholder=account?'留空保留现有密码':'门户登录密码';
     $('passwordHint').textContent=account?'留空不修改。已保存的密码不会回显。':'仅用于该人员的门户登录，保存后不回显。';
@@ -58,7 +59,7 @@
   $('personDialog').addEventListener('close',()=>{$('personForm').elements.password.value='';});
   $('personForm').onsubmit=async event=>{
     event.preventDefault();const form=event.currentTarget,button=$('savePerson');button.disabled=true;$('formError').hidden=true;
-    const data={employee_name:form.elements.employee_name.value.trim(),employee_id:form.elements.employee_id.value.trim(),team:form.elements.team.value.trim(),password:form.elements.password.value,enabled:form.elements.enabled.value==='1',run_time:form.elements.run_time.value,run_days:[...form.querySelectorAll('[name=run_days]:checked')].map(input=>Number(input.value))};
+    const data={employee_name:form.elements.employee_name.value.trim(),employee_id:form.elements.employee_id.value.trim(),team:form.elements.team.value.trim(),password:form.elements.password.value,execution_mode:form.elements.execution_mode.value,enabled:form.elements.enabled.value==='1',run_time:form.elements.run_time.value,run_days:[...form.querySelectorAll('[name=run_days]:checked')].map(input=>Number(input.value))};
     try{await Site.send(editing?'PUT':'POST',api+'/accounts'+(editing?'/'+editing:''),data);$('personDialog').close();Site.notice('人员信息已保存');await refresh();}
     catch(error){$('formError').textContent=error.message;$('formError').hidden=false;}finally{button.disabled=false;}
   };

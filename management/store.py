@@ -57,6 +57,7 @@ class Store:
               id INTEGER PRIMARY KEY, employee_id TEXT NOT NULL UNIQUE,
               employee_name TEXT NOT NULL, team TEXT NOT NULL DEFAULT '',
               secret TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+              execution_mode TEXT NOT NULL DEFAULT 'run',
               run_time TEXT NOT NULL, run_days TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0,
               created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
               checked_day TEXT, completion INTEGER, checked_at TEXT);
@@ -73,6 +74,10 @@ class Store:
               WHERE trigger='schedule';
             CREATE INDEX IF NOT EXISTS recent_jobs ON jobs(created_at);
             ''')
+            # Existing installations retain their previously configured answering behavior.
+            columns = {row['name'] for row in db.execute('PRAGMA table_info(accounts)')}
+            if 'execution_mode' not in columns:
+                db.execute("ALTER TABLE accounts ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'run'")
         self.path.chmod(0o600)
 
     @contextmanager
@@ -113,7 +118,7 @@ class Store:
     def save(self, data, account_id=None):
         if not isinstance(data, dict):
             raise ValueError('人员信息必须为 JSON 对象')
-        allowed = {'employee_id','employee_name','team','password','enabled','run_time','run_days'}
+        allowed = {'employee_id','employee_name','team','password','enabled','run_time','run_days','execution_mode'}
         if set(data) - allowed:
             raise ValueError('包含不支持的人员字段')
         with self.connect() as db:
@@ -137,6 +142,13 @@ class Store:
             enabled = values.get('enabled',True)
             if type(enabled) not in (bool,int) or enabled not in (0,1):
                 raise ValueError('启用状态不正确')
+            execution_mode = values.get('execution_mode','check')
+            if execution_mode not in ('check','run'):
+                raise ValueError('请选择仅查看进度或完成每日一练')
+            if execution_mode == 'check' and db.execute(
+                "SELECT 1 FROM jobs WHERE account_id=? AND status='running' AND mode='run'",(account_id,)
+            ).fetchone():
+                raise ValueError('答题任务正在执行，请结束后切换为仅查看进度')
             run_time = values.get('run_time','07:00')
             if not isinstance(run_time,str) or not re.fullmatch(r'(?:[01][0-9]|2[0-3]):[0-5][0-9]',run_time):
                 raise ValueError('执行时间格式为 HH:MM')
@@ -151,13 +163,15 @@ class Store:
             secret = self.cipher.encrypt(password.encode()).decode() if password else old['secret']
             current = timestamp()
             if old:
-                db.execute('UPDATE accounts SET employee_name=?,team=?,secret=?,enabled=?,run_time=?,run_days=?,updated_at=? WHERE id=?',
-                           (name.strip(),team.strip(),secret,int(enabled),run_time,json.dumps(sorted(set(days))),current,account_id))
+                db.execute('UPDATE accounts SET employee_name=?,team=?,secret=?,enabled=?,execution_mode=?,run_time=?,run_days=?,updated_at=? WHERE id=?',
+                           (name.strip(),team.strip(),secret,int(enabled),execution_mode,run_time,json.dumps(sorted(set(days))),current,account_id))
+                if execution_mode == 'check':
+                    db.execute("UPDATE jobs SET mode='check' WHERE account_id=? AND status='queued' AND mode='run'",(account_id,))
                 if not enabled:
                     db.execute("UPDATE jobs SET status='interrupted',stage='finished',message='计划已暂停，排队任务已取消',finished_at=? WHERE account_id=? AND status='queued'",(current,account_id))
             else:
-                cursor = db.execute('INSERT INTO accounts(employee_id,employee_name,team,secret,enabled,run_time,run_days,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',
-                                    (employee,name.strip(),team.strip(),secret,int(enabled),run_time,json.dumps(sorted(set(days))),current,current))
+                cursor = db.execute('INSERT INTO accounts(employee_id,employee_name,team,secret,enabled,execution_mode,run_time,run_days,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                                    (employee,name.strip(),team.strip(),secret,int(enabled),execution_mode,run_time,json.dumps(sorted(set(days))),current,current))
                 account_id = cursor.lastrowid
             return self.public(db.execute('SELECT * FROM accounts WHERE id=?',(account_id,)).fetchone())
 
@@ -169,8 +183,8 @@ class Store:
             if not db.execute('UPDATE accounts SET deleted=1,enabled=0,secret=\'\',updated_at=? WHERE id=? AND deleted=0',(timestamp(),account_id)).rowcount:
                 raise LookupError('人员不存在')
 
-    def enqueue(self, account_id, mode='run', trigger='manual', at=None):
-        if mode not in ('run','check'):
+    def enqueue(self, account_id, mode=None, trigger='manual', at=None):
+        if mode is not None and mode not in ('run','check'):
             raise ValueError('任务类型不正确')
         at = at or now()
         with self.connect() as db:
@@ -180,6 +194,9 @@ class Store:
                 raise LookupError('人员不存在')
             if not account['enabled']:
                 raise ValueError('人员已暂停，请先启用')
+            mode = mode or account['execution_mode']
+            if mode == 'run' and account['execution_mode'] == 'check':
+                raise ValueError('该人员配置为仅查看进度，不能执行答题')
             job_id = str(uuid.uuid4())
             try:
                 db.execute('INSERT INTO jobs(id,account_id,day,mode,trigger,status,created_at) VALUES(?,?,?,?,?,\'queued\',?)',
@@ -195,7 +212,7 @@ class Store:
                 continue
             if account['run_time'] > at.strftime('%H:%M'):
                 continue
-            if account['checked_day']==at.date().isoformat() and account['completion']:
+            if account['execution_mode']=='run' and account['checked_day']==at.date().isoformat() and account['completion']:
                 continue
             self.enqueue(account['id'],trigger='schedule',at=at)
 
@@ -204,6 +221,11 @@ class Store:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute("SELECT j.* FROM jobs j JOIN accounts a ON a.id=j.account_id WHERE j.status='queued' AND a.enabled=1 AND a.deleted=0 ORDER BY j.created_at,j.rowid LIMIT 1").fetchone()
             if row:
+                # Recheck the saved mode inside the same transaction used to claim the job.
+                account = db.execute('SELECT execution_mode FROM accounts WHERE id=?',(row['account_id'],)).fetchone()
+                if row['mode'] == 'run' and account['execution_mode'] == 'check':
+                    db.execute("UPDATE jobs SET mode='check' WHERE id=?",(row['id'],))
+                    row = db.execute('SELECT * FROM jobs WHERE id=?',(row['id'],)).fetchone()
                 db.execute("UPDATE jobs SET status='running',stage='starting',started_at=? WHERE id=?",(timestamp(),row['id']))
             return dict(row) if row else None
 

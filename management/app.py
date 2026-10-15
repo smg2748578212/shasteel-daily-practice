@@ -100,7 +100,7 @@ def create_app(root=None,authenticator=None,start_worker=False):
         body = request.get_json(silent=True)
         if not isinstance(body,dict) or set(body)-{'mode'}:
             raise ValueError('任务请求格式不正确')
-        job = store.enqueue(account_id,mode=body.get('mode','run'))
+        job = store.enqueue(account_id,mode=body.get('mode'))
         if not job:
             return jsonify(code=409,msg='该人员已有正在执行或排队的任务'),409
         return jsonify(code=200,data={'job_id':job},msg='任务已加入队列')

@@ -15,7 +15,7 @@ class StoreTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.store = Store(self.temp.name)
-        self.person = self.store.save(dict(employee_id='00000001',employee_name='Example',password='synthetic-secret',run_time='07:15'))
+        self.person = self.store.save(dict(employee_id='00000001',employee_name='Example',password='synthetic-secret',run_time='07:15',execution_mode='run'))
 
     def tearDown(self):
         self.temp.cleanup()
@@ -77,9 +77,62 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(self.store.history(),[])
 
     def test_validation_does_not_replace_existing_password(self):
-        for change in [{'run_time':'24:00'},{'run_days':[True]},{'employee_id':'changed'},{'run_days':[]}]:
+        for change in [{'run_time':'24:00'},{'run_days':[True]},{'employee_id':'changed'},{'run_days':[]},{'execution_mode':'invalid'},{'execution_mode':None}]:
             with self.assertRaises(ValueError):self.store.save(change,self.person['id'])
         self.assertEqual(self.store.credentials(self.person['id'])[2],'synthetic-secret')
+
+    def test_new_accounts_default_to_check_and_reject_answering(self):
+        person = self.store.save(dict(employee_id='00000002',employee_name='Viewer',password='synthetic-secret'))
+        self.assertEqual(person['execution_mode'],'check')
+        with self.assertRaisesRegex(ValueError,'仅查看进度'):
+            self.store.enqueue(person['id'],'run')
+        self.store.enqueue(person['id'])
+        self.assertEqual(self.store.claim()['mode'],'check')
+
+    def test_schedule_uses_each_persons_mode_even_after_viewer_is_complete(self):
+        viewer = self.store.save(dict(employee_id='00000002',employee_name='Viewer',password='synthetic-secret'))
+        at = datetime(2026,10,15,8,0,tzinfo=TZ)
+        with self.store.connect() as db:
+            db.execute('UPDATE accounts SET checked_day=?,completion=1 WHERE id=?',(at.date().isoformat(),viewer['id']))
+        self.store.schedule(at)
+        self.store.schedule(at)
+        jobs = {job['account_id']:job['mode'] for job in self.store.history()}
+        self.assertEqual(jobs,{self.person['id']:'run',viewer['id']:'check'})
+        self.assertEqual(len(self.store.history()),2)
+
+    def test_switching_to_check_downgrades_queue_and_persists(self):
+        job = self.store.enqueue(self.person['id'],'run')
+        self.store.save({'execution_mode':'check'},self.person['id'])
+        reloaded = Store(self.temp.name)
+        self.assertEqual(reloaded.accounts()[0]['execution_mode'],'check')
+        self.assertEqual(reloaded.history()[0]['mode'],'check')
+        self.assertEqual(reloaded.claim()['mode'],'check')
+        self.assertEqual(reloaded.history()[0]['id'],job)
+
+    def test_cannot_switch_to_check_while_answering_is_running(self):
+        self.store.enqueue(self.person['id'],'run');self.store.claim()
+        with self.assertRaisesRegex(ValueError,'正在执行'):
+            self.store.save({'execution_mode':'check','team':'Should roll back'},self.person['id'])
+        person = self.store.accounts()[0]
+        self.assertEqual(person['execution_mode'],'run')
+        self.assertEqual(person['team'],'')
+
+    def test_claim_defends_against_legacy_queued_answering_for_viewer(self):
+        self.store.enqueue(self.person['id'],'run')
+        with self.store.connect() as db:
+            db.execute("UPDATE accounts SET execution_mode='check' WHERE id=?",(self.person['id'],))
+        self.assertEqual(self.store.claim()['mode'],'check')
+        self.assertEqual(self.store.history()[0]['mode'],'check')
+
+    def test_old_schema_upgrade_preserves_people_credentials_and_history(self):
+        self.store.enqueue(self.person['id'],'check')
+        with self.store.connect() as db:
+            db.execute('ALTER TABLE accounts DROP COLUMN execution_mode')
+        migrated = Store(self.temp.name)
+        self.assertEqual(migrated.accounts()[0]['execution_mode'],'run')
+        self.assertEqual(migrated.credentials(self.person['id'])[2],'synthetic-secret')
+        self.assertEqual(len(migrated.history()),1)
+        self.assertEqual(Store(self.temp.name).accounts()[0]['execution_mode'],'run')
 
 
 class APITests(unittest.TestCase):
@@ -120,6 +173,23 @@ class APITests(unittest.TestCase):
         self.assertEqual(self.client.delete(path,headers=self.headers).status_code,200)
         self.assertEqual(store.accounts(),[])
         self.assertEqual(len(store.history()),1)
+
+    def test_viewer_mode_cannot_be_bypassed_and_default_job_only_checks(self):
+        created = self.client.post('/api/daily-practice/accounts',json={
+            'employee_id':'00000002','employee_name':'Viewer','password':'synthetic-secret',
+        },headers=self.headers)
+        self.assertEqual(created.json['data']['execution_mode'],'check')
+        path = '/api/daily-practice/accounts/'+str(created.json['data']['id'])
+        denied = self.client.post(path+'/run',json={'mode':'run'},headers=self.headers)
+        self.assertEqual(denied.status_code,400)
+        store = self.app.extensions['daily_store']
+        self.assertEqual(store.history(),[])
+        self.assertEqual(self.client.post(path+'/run',json={},headers=self.headers).status_code,200)
+        job = store.claim();self.assertEqual(job['mode'],'check');store.finish(job['id'],completed=False)
+        changed = self.client.put(path,json={'execution_mode':'run'},headers=self.headers)
+        self.assertEqual(changed.json['data']['execution_mode'],'run')
+        self.assertEqual(self.client.post(path+'/run',json={},headers=self.headers).status_code,200)
+        self.assertEqual(store.claim()['mode'],'run')
 
 
 if __name__=='__main__':unittest.main()
