@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>每日一练 · 智联工具箱</title>
+  <link rel="stylesheet" href="/assets/site.css">
+  <link rel="stylesheet" href="/assets/daily-practice.css?v=20261015-1">
+  <script defer src="/assets/site.js"></script>
+  <script defer src="/assets/daily-practice.js?v=20261015-1"></script>
+</head>
+<body class="site-body" data-page="daily-practice">
+<main class="page-wrap daily-page">
+  <div class="daily-heading"><div class="site-page-heading"><div class="site-eyebrow">DAILY PRACTICE / AUTOMATION</div><h1>每日一练</h1><p>管理自动练习人员和执行计划，掌握每次完成情况。</p></div><span id="serviceState" class="site-badge" role="status">正在连接…</span></div>
+  <div id="siteNotice" hidden role="status" aria-live="polite"></div>
+  <section class="daily-stats" aria-label="今日概览">
+    <article><span>维护人员</span><strong id="statPeople">—</strong><small id="statEnabled">正在加载</small></article>
+    <article><span>今日已完成</span><strong id="statComplete">—</strong><small>由门户确认的完成状态</small></article>
+    <article><span>执行与排队</span><strong id="statActive">—</strong><small>按顺序执行，避免同时登录</small></article>
+    <article><span>待关注</span><strong id="statAttention">—</strong><small>执行失败或意外中断</small></article>
+  </section>
+  <section aria-labelledby="peopleTitle">
+    <div class="daily-section-title"><div><h2 id="peopleTitle">人员与执行计划</h2><p>时间均为北京时间。暂停后不会新增自动任务。</p></div><div class="site-inline-actions"><button id="refreshButton" class="site-button secondary">刷新</button><button id="addButton" class="site-button">＋ 添加人员</button></div></div>
+    <div class="site-toolbar"><label class="site-search"><span>⌕</span><input id="search" placeholder="搜索姓名、工号或班组…" aria-label="搜索人员"></label><div class="daily-filters"><select id="statusFilter" aria-label="筛选状态"><option value="all">所有状态</option><option value="completed">今日已完成</option><option value="pending">今日待完成</option><option value="active">执行与排队</option><option value="attention">需要关注</option><option value="paused">已暂停</option></select><span class="site-count" id="peopleCount"></span></div></div>
+    <div class="site-panel site-table-wrap"><table class="site-table daily-people"><thead><tr><th>人员 / 班组</th><th>每日执行计划</th><th>今日状态 / 当前进度</th><th>最近检查 / 下次执行</th><th>操作</th></tr></thead><tbody id="peopleBody"><tr><td colspan="5" class="daily-empty">正在加载人员…</td></tr></tbody></table></div>
+  </section>
+  <section aria-labelledby="historyTitle" class="daily-history">
+    <div class="daily-section-title"><div><h2 id="historyTitle">执行记录</h2><p>保留检查结果、开始时间和耗时，最近 50 条。</p></div><select id="historyPerson" aria-label="按人员筛选执行记录"><option value="">全部人员</option></select></div>
+    <div class="site-panel site-table-wrap"><table class="site-table"><thead><tr><th>人员</th><th>任务</th><th>开始时间 / 耗时</th><th>结果</th><th>说明</th></tr></thead><tbody id="historyBody"><tr><td colspan="5" class="daily-empty">正在加载记录…</td></tr></tbody></table></div>
+  </section>
+  <p class="daily-footnote" id="updatedAt">仅管理员可维护人员信息。密码保存后不会回显。</p>
+</main>
+<dialog id="personDialog" class="site-dialog">
+  <form id="personForm">
+    <div class="site-dialog-head"><h2 id="dialogTitle">添加人员</h2><button type="button" id="closeDialog" class="daily-close" aria-label="关闭">×</button></div>
+    <div class="daily-form-body"><div id="formError" class="site-error" hidden role="alert"></div>
+      <div class="daily-form-grid"><label>姓名<input name="employee_name" required maxlength="80" autocomplete="off" placeholder="人员姓名"></label><label>工号<input name="employee_id" required pattern="[0-9]{1,20}" maxlength="20" inputmode="numeric" autocomplete="off" placeholder="门户登录工号"></label></div>
+      <label>班组<input name="team" maxlength="80" autocomplete="off" placeholder="例如：原料车间一班"></label>
+      <label>门户密码<input name="password" type="password" maxlength="256" autocomplete="new-password"><small id="passwordHint">仅用于该人员的门户登录，保存后不回显。</small></label>
+      <div class="daily-form-grid"><label>每日执行时间<input name="run_time" type="time" required value="07:00"><small>北京时间；任务按顺序执行。</small></label><label>自动执行<select name="enabled"><option value="1">启用</option><option value="0">暂停</option></select><small>暂停不会中断已开始的任务。</small></label></div>
+      <fieldset class="daily-days"><legend>执行星期</legend><label><input type="checkbox" name="run_days" value="0" checked>一</label><label><input type="checkbox" name="run_days" value="1" checked>二</label><label><input type="checkbox" name="run_days" value="2" checked>三</label><label><input type="checkbox" name="run_days" value="3" checked>四</label><label><input type="checkbox" name="run_days" value="4" checked>五</label><label><input type="checkbox" name="run_days" value="5" checked>六</label><label><input type="checkbox" name="run_days" value="6" checked>日</label></fieldset>
+    </div><div class="daily-dialog-actions"><button type="button" id="cancelDialog" class="site-button secondary">取消</button><button type="submit" id="savePerson" class="site-button">保存人员</button></div>
+  </form>
+</dialog>
+</body></html>

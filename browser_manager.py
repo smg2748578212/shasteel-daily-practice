@@ -16,6 +16,7 @@ class BrowserManager:
     def __enter__(self):
         self._playwright = sync_playwright().start()
         self._browser = self._playwright.chromium.launch(
+            executable_path=config.BROWSER_EXECUTABLE or None,
             headless=config.HEADLESS,
             args=[
                 "--no-sandbox",
