@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from cryptography.fernet import Fernet
 from management.reports import format_daily_report
+from management.roster import build_roster
 
 TZ = ZoneInfo('Asia/Shanghai')
 ACTIVE = ('queued', 'running')
@@ -75,6 +76,7 @@ class Store:
             CREATE UNIQUE INDEX IF NOT EXISTS one_scheduled_run ON jobs(account_id,day)
               WHERE trigger='schedule';
             CREATE INDEX IF NOT EXISTS recent_jobs ON jobs(created_at);
+            CREATE INDEX IF NOT EXISTS account_day_jobs ON jobs(account_id,day,created_at DESC);
             CREATE TABLE IF NOT EXISTS manager_settings (key TEXT PRIMARY KEY,value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS daily_reports (
               day TEXT PRIMARY KEY,status TEXT NOT NULL,title TEXT NOT NULL,content TEXT NOT NULL,
@@ -88,6 +90,9 @@ class Store:
                 db.execute("ALTER TABLE accounts ADD COLUMN enrollment_source TEXT NOT NULL DEFAULT 'admin'")
             if 'public_enrolled_at' not in columns:
                 db.execute('ALTER TABLE accounts ADD COLUMN public_enrolled_at TEXT')
+            report_columns = {row['name'] for row in db.execute('PRAGMA table_info(daily_reports)')}
+            if 'roster_json' not in report_columns:
+                db.execute('ALTER TABLE daily_reports ADD COLUMN roster_json TEXT')
             at = now()
             first_report = (at + timedelta(days=1) if at.hour >= 16 else at).date().isoformat()
             db.execute("INSERT OR IGNORE INTO manager_settings(key,value) VALUES('daily_summary_start_day',?)",(first_report,))
@@ -127,6 +132,38 @@ class Store:
                 item['today_status'] = ('completed' if item['completion'] else 'pending') if item['checked_day'] == now().date().isoformat() else 'unknown'
                 result.append(item)
             return result
+
+    @staticmethod
+    def roster_people(db, day):
+        return [dict(row) for row in db.execute('''
+          SELECT a.employee_name,a.employee_id,a.team,a.enabled,a.checked_day,a.completion,a.checked_at,
+                 j.status AS last_status,j.finished_at AS last_finished_at
+          FROM accounts a LEFT JOIN jobs j ON j.rowid=(
+            SELECT rowid FROM jobs WHERE account_id=a.id AND day=?
+            ORDER BY created_at DESC,rowid DESC LIMIT 1)
+          WHERE a.deleted=0 ORDER BY a.team,a.employee_name,a.id
+        ''',(day,)).fetchall()]
+
+    def roster(self, day=None):
+        today = now().date().isoformat()
+        if day is not None:
+            if not isinstance(day,str) or not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}',day):
+                raise ValueError('日期格式为 YYYY-MM-DD')
+            try:
+                datetime.strptime(day,'%Y-%m-%d')
+            except ValueError:
+                raise ValueError('日期不正确') from None
+            if day > today:
+                raise ValueError('不能查看未来日期的名单')
+        with self.connect() as db:
+            if day is not None:
+                report = db.execute('SELECT roster_json FROM daily_reports WHERE day=?',(day,)).fetchone()
+                if report and report['roster_json']:
+                    return json.loads(report['roster_json'])
+                if day != today:
+                    raise LookupError('该日期尚未保存名单快照')
+            day = day or today
+            return build_roster(self.roster_people(db,day),day,timestamp())
 
     def save(self, data, account_id=None, *, public_enrollment=False):
         if not isinstance(data, dict):
@@ -268,14 +305,13 @@ class Store:
             for row in rows:
                 if self.due(self.public(row),at) and not db.execute("SELECT 1 FROM jobs WHERE account_id=? AND day=? AND trigger='schedule'",(row['id'],day)).fetchone():
                     return None
-            people = []
-            for row in rows:
-                person = {key:row[key] for key in ['employee_name','employee_id','checked_day','completion','checked_at']}
-                latest = db.execute('SELECT status,finished_at FROM jobs WHERE account_id=? AND day=? ORDER BY created_at DESC,rowid DESC LIMIT 1',(row['id'],day)).fetchone()
-                person.update(last_status=latest['status'] if latest else None,last_finished_at=latest['finished_at'] if latest else None)
-                people.append(person)
-            report = format_daily_report(people,day)
-            db.execute("INSERT INTO daily_reports(day,status,title,content,created_at) VALUES(?,'sending',?,?,?)",(day,report['title'],report['content'],timestamp()))
+            all_people = self.roster_people(db,day)
+            people = [person for person in all_people if person['enabled']]
+            base = os.environ.get('DAILY_MANAGER_PUBLIC_URL','').rstrip('/')
+            roster_url = f'{base}/daily-practice-roster.html?date={day}'
+            report = format_daily_report(people,day,roster_url)
+            snapshot = build_roster(all_people,day,timestamp(),source='snapshot')
+            db.execute("INSERT INTO daily_reports(day,status,title,content,created_at,roster_json) VALUES(?,'sending',?,?,?,?)",(day,report['title'],report['content'],timestamp(),json.dumps(snapshot,ensure_ascii=False)))
             return dict(day=day,**report)
 
     def finish_daily_report(self, day, sent):

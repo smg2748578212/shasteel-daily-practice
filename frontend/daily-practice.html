@@ -19,7 +19,7 @@
     <article><span>待关注</span><strong id="statAttention">—</strong><small>执行失败或意外中断</small></article>
   </section>
   <section aria-labelledby="peopleTitle">
-    <div class="daily-section-title"><div><h2 id="peopleTitle">人员与执行计划</h2><p>时间均为北京时间。仅查看进度的人员不会自动答题；暂停后不会新增任务。</p></div><div class="site-inline-actions"><button id="refreshButton" class="site-button secondary">刷新</button><button id="addButton" class="site-button">＋ 添加人员</button></div></div>
+    <div class="daily-section-title"><div><h2 id="peopleTitle">人员与执行计划</h2><p>时间均为北京时间。仅查看进度的人员不会自动答题；暂停后不会新增任务。</p></div><div class="site-inline-actions"><a class="site-button secondary" href="/daily-practice-roster.html" target="_blank" rel="noopener">全部名单</a><button id="refreshButton" class="site-button secondary">刷新</button><button id="addButton" class="site-button">＋ 添加人员</button></div></div>
     <div class="site-toolbar"><label class="site-search"><span>⌕</span><input id="search" placeholder="搜索姓名、工号或班组…" aria-label="搜索人员"></label><div class="daily-filters"><select id="statusFilter" aria-label="筛选状态"><option value="all">所有状态</option><option value="completed">今日已完成</option><option value="pending">今日待完成</option><option value="active">执行与排队</option><option value="attention">需要关注</option><option value="paused">已暂停</option></select><span class="site-count" id="peopleCount"></span></div></div>
     <div class="site-panel site-table-wrap"><table class="site-table daily-people"><thead><tr><th>人员 / 班组</th><th>每日执行计划</th><th>今日状态 / 当前进度</th><th>最近检查 / 下次执行</th><th>操作</th></tr></thead><tbody id="peopleBody"><tr><td colspan="5" class="daily-empty">正在加载人员…</td></tr></tbody></table></div>
   </section>

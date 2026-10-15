@@ -30,6 +30,7 @@ ARM64 可以使用系统 Chromium，并设置 `DAILY_PRACTICE_BROWSER_EXECUTABLE
 | `SHASTEEL_COMPLETION_API_URL` | 门户当日完成状态接口 |
 | `DAILY_MANAGER_DATA` | 受保护的运行数据目录 |
 | `DAILY_MANAGER_PORT` | 回环监听端口，默认 `5011` |
+| `DAILY_MANAGER_PUBLIC_URL` | 公开网站 HTTPS 地址，用于 QQ 汇总中的完整名单链接 |
 | `DAILY_MANAGER_PAUSED` | 迁移时设为 `1`，仅允许手动检查，暂不扫描每日计划 |
 
 使用一个 Gunicorn worker、四个 HTTP 线程。调度器还持有文件锁，避免多个进程重复执行。应通过 runit 或其他服务管理器运行 `management/start.py`，包括停机时的子进程清理。
@@ -95,3 +96,11 @@ ARM64 可以使用系统 Chromium，并设置 `DAILY_PRACTICE_BROWSER_EXECUTABLE
 查询失败：1 人（示例丙）
 尚未查询：0 人
 ```
+
+## 全部名单页面与接口
+
+公开只读页面 `/daily-practice-roster.html` 和接口 `GET /api/daily-practice/public/roster` 展示全部未移除人员，包括已暂停人员；每人仅返回姓名、班组、完成状态及最近查询时间。接口不返回工号字段、密码、内部人员 ID、任务日志或登录令牌。管理接口仍要求管理员身份。刷新页面只读本地查询记录，不访问门户，不发 QQ。
+
+无日期参数时展示今日实时记录。通知中追加 `${DAILY_MANAGER_PUBLIC_URL}/daily-practice-roster.html?date=YYYY-MM-DD`，其页面使用 `GET /api/daily-practice/public/roster?date=YYYY-MM-DD` 获取通知生成时的持久快照，包含已完成的全部姓名。快照与发送记录在同一事务保存，之后新增、暂停、改名或移除人员不会改变旧通知名单。
+
+通知计数仍只统计启用人员，页面单列暂停人数；正在查询、失败、未查询均明确标记。今日尚未生成通知快照时，带今日日期的链接展示实时名单；过去日期没有快照则返回 `404`，不拼凑历史名单。未来日期和非法参数返回 `400`。新字段 `daily_reports.roster_json` 自动迁移，原发送状态保持不变，不会补发或重复发送旧通知。

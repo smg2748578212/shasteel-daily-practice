@@ -97,6 +97,14 @@ def create_app(root=None,authenticator=None,start_worker=False):
     def health():
         return jsonify(status='ok',scheduler=bool(worker.thread and worker.thread.is_alive()))
 
+    @app.get('/api/daily-practice/public/roster')
+    def public_roster():
+        if set(request.args)-{'date'} or len(request.args.getlist('date'))>1:
+            raise ValueError('名单接口仅支持单个 date 参数')
+        response = jsonify(code=200,data=store.roster(request.args.get('date')))
+        response.headers['X-Robots-Tag'] = 'noindex, nofollow'
+        return response
+
     @app.get('/api/daily-practice/overview')
     @authenticator
     def overview():
