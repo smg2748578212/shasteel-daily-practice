@@ -130,3 +130,5 @@ python -m compileall -q .
 ```
 
 `.gitignore` 排除了 `.env`、真实账号配置、会话令牌、运行记录、截图和题库。提交前仍应检查自己新增的文件。
+
+管理页“全部名单”旁提供“一键查询未完成人员”：将今日未完成、尚未检查或查询失败的启用人员加入状态查询队列，跳过今日已完成、已暂停及执行或排队中的人员。此操作固定仅查询，不触发答题。管理接口为 `POST /api/daily-practice/check-uncompleted`，请求体 `{}`，沿用管理员登录验证；返回 `queued`、`completed`、`paused`、`active` 人数。

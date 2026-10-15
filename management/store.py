@@ -270,6 +270,30 @@ class Store:
                 return None
             return job_id
 
+    def enqueue_uncompleted_checks(self, at=None):
+        at = at or now()
+        day = at.date().isoformat()
+        result = dict(queued=0,completed=0,paused=0,active=0)
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            rows = db.execute('''SELECT a.id,a.enabled,a.checked_day,a.completion,
+              EXISTS(SELECT 1 FROM jobs j WHERE j.account_id=a.id
+                     AND j.status IN ('queued','running')) AS active
+              FROM accounts a WHERE a.deleted=0 ORDER BY a.team,a.employee_name,a.id''').fetchall()
+            for row in rows:
+                if row['checked_day']==day and row['completion']:
+                    result['completed'] += 1
+                elif not row['enabled']:
+                    result['paused'] += 1
+                elif row['active']:
+                    result['active'] += 1
+                else:
+                    db.execute('''INSERT INTO jobs(id,account_id,day,mode,trigger,status,created_at)
+                      VALUES(?,?,?,'check','manual','queued',?)''',
+                      (str(uuid.uuid4()),row['id'],day,at.isoformat(timespec='seconds')))
+                    result['queued'] += 1
+        return result
+
     @staticmethod
     def due(account, at):
         if not account['enabled'] or at.weekday() not in account['run_days']:

@@ -56,6 +56,15 @@
     $('personDialog').showModal();
   }
   $('addButton').onclick=()=>open();$('refreshButton').onclick=()=>refresh(true);
+  $('checkUncompletedButton').onclick=async()=>{
+    const button=$('checkUncompletedButton');button.disabled=true;button.textContent='正在加入查询队列…';
+    try{
+      const result=await Site.send('POST',api+'/check-uncompleted',{});
+      Site.notice(`已将 ${result.queued} 人加入状态查询队列；跳过已完成 ${result.completed} 人、已暂停 ${result.paused} 人、执行或排队中 ${result.active} 人。`);
+      await refresh();
+    }catch(error){Site.notice(error.message,true);}
+    finally{button.disabled=false;button.textContent='一键查询未完成人员';}
+  };
   $('search').oninput=render;$('statusFilter').onchange=render;$('historyPerson').onchange=()=>history().catch(error=>Site.notice(error.message,true));
   $('closeDialog').onclick=$('cancelDialog').onclick=()=>$('personDialog').close();
   $('personDialog').addEventListener('close',()=>{$('personForm').elements.password.value='';});

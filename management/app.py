@@ -139,6 +139,14 @@ def create_app(root=None,authenticator=None,start_worker=False):
             return jsonify(code=409,msg='该人员已有正在执行或排队的任务'),409
         return jsonify(code=200,data={'job_id':job},msg='任务已加入队列')
 
+    @app.post('/api/daily-practice/check-uncompleted')
+    @authenticator
+    def check_uncompleted():
+        body = request.get_json(silent=True)
+        if not isinstance(body,dict) or body:
+            raise ValueError('批量查询请求需为空 JSON 对象')
+        return jsonify(code=200,data=store.enqueue_uncompleted_checks(),msg='未完成人员状态查询已加入队列')
+
     @app.get('/api/daily-practice/history')
     @authenticator
     def history():
