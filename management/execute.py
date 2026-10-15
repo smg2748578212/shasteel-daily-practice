@@ -2,15 +2,11 @@
 import json
 import os
 import sys
-from urllib.parse import urlsplit
 
 import config
-from auth import authenticate, save_token_cache, try_direct_access
-from browser_manager import BrowserManager
-from daily_practice import DailyPracticeRunner
 from exceptions import AlreadyCompletedError, LoginError, NetworkError, NoQuestionsTodayError
 from logger import Logger
-from question_bank import append_question, get_bank
+from management.http_client import PortalClient, completion_value
 
 
 def emit(**event):
@@ -41,13 +37,26 @@ def verify_completion(page):
       if(!response.ok) throw new Error('Completion request failed');
       return await response.json();
     }''',endpoint)
-    if result.get('code') != 200 or type(result.get('data')) is not bool:
-        raise ValueError('Completion response was not authoritative')
-    return result['data']
+    return completion_value(result)
 
 
 def main(mode):
     os.umask(0o077)
+    if mode not in ('check','run'):
+        raise ValueError('Unknown execution mode')
+    if mode == 'check' or config.SESSION_API_URL:
+        def progress(stage):
+            emit(type='progress',stage=stage,current=0,total=0)
+        with PortalClient(progress=progress) as client:
+            completed = client.completed()
+        if mode == 'check' or completed:
+            emit(type='result',completed=completed)
+            return
+    # Only answering an unfinished exercise needs the browser dependencies.
+    from auth import authenticate, save_token_cache, try_direct_access
+    from browser_manager import BrowserManager
+    from daily_practice import DailyPracticeRunner
+    from question_bank import append_question, get_bank
     logger = ProgressLogger()
     logger.stage('authenticating')
     with BrowserManager() as (browser,page):

@@ -28,6 +28,7 @@ ARM64 可以使用系统 Chromium，并设置 `DAILY_PRACTICE_BROWSER_EXECUTABLE
 | `DATABASE_URL` | 现有站点会话数据库，只用于验证站点用户与权限 |
 | `SITE_SHARED_ROOT` | 现有站点 `shared/` 包的父目录，默认 `/opt/webapp` |
 | `SHASTEEL_COMPLETION_API_URL` | 门户当日完成状态接口 |
+| `SHASTEEL_SESSION_API_URL` | 门户查询令牌交换接口，不含用户名等查询参数 |
 | `DAILY_MANAGER_DATA` | 受保护的运行数据目录 |
 | `DAILY_MANAGER_PORT` | 回环监听端口，默认 `5011` |
 | `DAILY_MANAGER_PUBLIC_URL` | 公开网站 HTTPS 地址，用于 QQ 汇总中的完整名单链接 |
@@ -104,3 +105,11 @@ ARM64 可以使用系统 Chromium，并设置 `DAILY_PRACTICE_BROWSER_EXECUTABLE
 无日期参数时展示今日实时记录。通知中追加 `${DAILY_MANAGER_PUBLIC_URL}/daily-practice-roster.html?date=YYYY-MM-DD`，其页面使用 `GET /api/daily-practice/public/roster?date=YYYY-MM-DD` 获取通知生成时的持久快照，包含已完成的全部姓名。快照与发送记录在同一事务保存，之后新增、暂停、改名或移除人员不会改变旧通知名单。
 
 通知计数仍只统计启用人员，页面单列暂停人数；正在查询、失败、未查询均明确标记。今日尚未生成通知快照时，带今日日期的链接展示实时名单；过去日期没有快照则返回 `404`，不拼凑历史名单。未来日期和非法参数返回 `400`。新字段 `daily_reports.roster_json` 自动迁移，原发送状态保持不变，不会补发或重复发送旧通知。
+
+## 无浏览器的进度查询
+
+`management/http_client.py` 使用三个 HTTP POST 完成查询：门户登录验证账号密码及返回身份；向配置的会话接口传入 `userName`、`appId` 获取查询令牌；携带 `Authorization` 查询当日完成状态。会话接口和应用标识仍从受保护运行配置读取，仓库不包含生产地址和标识。首次查询验证门户凭据，成功获取的令牌以 `0600` 权限缓存在每人的私有数据目录 `http_session.json`。后续查询直接携带本人的缓存令牌，通常只需一次完成状态请求。缓存绑定工号、门户接口配置及加密密码的版本指纹；修改密码会使旧缓存失效，不复用其他人员的登录状态。令牌的 `exp` 只用于提前判断缓存到期，真实性仍由门户验证；临近到期（提前 60 秒）或收到明确的 401/403 拒绝时刷新一次。网络超时和服务器故障不会清除原有令牌；连接建立超时最多重试一次，不因此重新登录；没有可读 `exp` 的令牌最多缓存 24 小时。
+
+`check` 模式不会导入或启动 Playwright、Chromium、答题器、OCR 或模型服务。HTTP 失败、身份不符、令牌拒绝和非布尔完成值都会报失败，不会自动转为答题。`run` 模式在会话接口已配置时先执行 HTTP 检查，已完成直接返回，未完成继续使用原浏览器答题并按门户结果复核。每日 16:00 计划、QQ 批量汇总、完整名单及通知快照语义不变。
+
+浏览器前端的题目生成和答案提交接口也已定位；本次仅将已实测的查询链路改为 HTTP，未用未验证的提交格式替代现有答题流程。

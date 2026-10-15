@@ -6,6 +6,8 @@ extra_accounts*.json
 accounts/
 browser_state*.json
 token_cache*.json
+http_session.json
+.http-session-*
 logs/
 screenshots/
 backups/

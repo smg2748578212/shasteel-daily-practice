@@ -13,14 +13,14 @@ def compute_auth_token(user_unique_token: str) -> str:
     pass
     return hashlib.sha256((user_unique_token + 'shasteel').encode()).hexdigest()
 
-def login(employee_id=None, password=None) -> dict:
+def login(employee_id=None, password=None, *, session=None) -> dict:
     pass
     employee_id = config.EMPLOYEE_ID if employee_id is None else employee_id
     password = config.PASSWORD if password is None else password
     encoded_pw = encode_password(password)
     payload = {'userName': employee_id, 'password': encoded_pw}
     try:
-        resp = requests.post(config.LOGIN_URL, json=payload, timeout=15)
+        resp = (session or requests).post(config.LOGIN_URL, json=payload, timeout=15)
     except requests.RequestException as e:
         raise NetworkError(f'无法连接登录接口: {e}')
     if resp.status_code != 200:

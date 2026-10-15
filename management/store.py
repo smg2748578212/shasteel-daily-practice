@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import re
 import sqlite3
@@ -332,11 +333,15 @@ class Store:
             return dict(row) if row else None
 
     def credentials(self, account_id):
+        return self.execution_credentials(account_id)[:3]
+
+    def execution_credentials(self, account_id):
         with self.connect() as db:
             row = db.execute('SELECT * FROM accounts WHERE id=? AND deleted=0',(account_id,)).fetchone()
         if not row:
             raise LookupError('人员不存在')
-        return row['employee_id'], row['employee_name'], self.cipher.decrypt(row['secret'].encode()).decode()
+        version = hashlib.sha256(row['secret'].encode()).hexdigest()
+        return row['employee_id'], row['employee_name'], self.cipher.decrypt(row['secret'].encode()).decode(), version
 
     def progress(self, job_id, stage, current=0, total=0):
         with self.connect() as db:

@@ -46,6 +46,7 @@ set +a
 | `SHASTEEL_EMPLOYEE_NAME` | 可选显示名称 |
 | `SHASTEEL_LOGIN_URL`、`SHASTEEL_SSO_REDIRECT_URL` | 门户登录及单点登录接口 |
 | `SHASTEEL_APP_ID`、`SHASTEEL_APP_ID_STR`、`SHASTEEL_H5_BASE` | 当前部署的应用标识与 H5 地址 |
+| `SHASTEEL_SESSION_API_URL`、`SHASTEEL_COMPLETION_API_URL` | 门户查询令牌交换及当日完成状态接口 |
 | `SHASTEEL_MY_APPS_URL` | 可选门户应用列表地址，当前答题流程不依赖它 |
 | `QUESTION_BANK_PATH` | 本地 Excel 题库路径 |
 | `DEEPSEEK_API_KEY` 或 `DEEPSEEK_TOKEN_FILE` | 模型服务密钥，或密钥文件路径 |
@@ -99,7 +100,7 @@ python run.py --dry-run
 
 ## 状态与能力边界
 
-现有页面接口通过当前账号登录状态判断当日是否完成。仓库没有全班组汇总或任意历史日期查询接口；配置多个账号只是逐个运行，不会自动获得其他员工的访问权限。
+已验证的 HTTP 流程通过门户账号密码验证身份、获取查询会话令牌，再读取当日完成标志。网站管理服务的“仅查看进度”全程使用 HTTP，优先复用本人令牌，过期或被拒绝时刷新，不启动浏览器；自动完成也先通过 HTTP 检查，已完成则直接结束，未完成才进入浏览器答题。仓库没有全班组汇总或任意历史日期查询接口；配置多个账号只是逐个运行，不会自动获得其他员工的访问权限。
 
 新管理页汇总已获授权并录入的人员，由后台逐人检查当日状态并保存今后的执行历史。它不会补出门户未提供的过去日期记录。
 

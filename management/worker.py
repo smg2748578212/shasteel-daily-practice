@@ -62,11 +62,12 @@ class Worker:
     def execute(self,job):
         result = None
         try:
-            employee,name,password = self.store.credentials(job['account_id'])
+            employee,name,password,version = self.store.execution_credentials(job['account_id'])
             state = self.store.root/'accounts'/str(job['account_id'])
             state.mkdir(parents=True,exist_ok=True,mode=0o700)
             env = dict(os.environ,SHASTEEL_EMPLOYEE_ID=employee,SHASTEEL_EMPLOYEE_NAME=name,
-                       SHASTEEL_PASSWORD=password,DAILY_PRACTICE_STATE_DIR=str(state),PYTHONUNBUFFERED='1')
+                       SHASTEEL_PASSWORD=password,DAILY_PRACTICE_STATE_DIR=str(state),
+                       DAILY_PRACTICE_CREDENTIAL_VERSION=version,PYTHONUNBUFFERED='1')
             env.pop('DATABASE_URL',None)
             for key in ('ASTROBOT_API_KEY','ASTROBOT_TARGETS'):
                 env.pop(key,None)
